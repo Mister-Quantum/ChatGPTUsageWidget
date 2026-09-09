@@ -5,7 +5,6 @@ public struct UsageLimitWindow: Equatable, Sendable {
     public let limitId: String
     public let limitName: String
     public let windowName: String
-    public let shortName: String
     public let usedPercent: Double
     public let durationMinutes: Int
     public let resetsAt: Date
@@ -68,10 +67,6 @@ public enum UsageLimitsParser {
         let windows = buckets.flatMap { id, rawBucket -> [UsageLimitWindow] in
             guard let bucket = rawBucket as? [String: Any] else { return [] }
             let displayName = (bucket["limitName"] as? String) ?? (id == "codex" ? "Codex general" : id)
-            let shortLabel = id == "codex"
-                ? "Codex"
-                : (displayName.localizedCaseInsensitiveContains("spark") ? "Spark" : displayName)
-
             return [("primary", bucket["primary"]), ("secondary", bucket["secondary"])]
                 .compactMap { position, rawWindow in
                     guard
@@ -86,7 +81,6 @@ public enum UsageLimitsParser {
                         limitId: id,
                         limitName: displayName,
                         windowName: durationName(duration),
-                        shortName: "\(shortLabel) \(shortDuration(duration))",
                         usedPercent: used,
                         durationMinutes: duration,
                         resetsAt: Date(timeIntervalSince1970: reset)
@@ -118,12 +112,6 @@ public enum UsageLimitsParser {
         return "\(minutes) minutes"
     }
 
-    private static func shortDuration(_ minutes: Int) -> String {
-        if minutes % 10_080 == 0 { return "\(minutes / 10_080)w" }
-        if minutes % 1_440 == 0 { return "\(minutes / 1_440)d" }
-        if minutes % 60 == 0 { return "\(minutes / 60)h" }
-        return "\(minutes)m"
-    }
 }
 
 public struct AppServerUsageSource: Sendable {
@@ -150,7 +138,7 @@ public struct AppServerUsageSource: Sendable {
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = [
             "-c",
-            "{ printf '%s\\n' \"$2\"; sleep 1; printf '%s\\n' \"$3\"; sleep 2; } | \"$1\" app-server",
+            Self.appServerScript,
             "chatgpt-usage-widget",
             codexPath,
             initialize,
@@ -200,4 +188,20 @@ public struct AppServerUsageSource: Sendable {
         ]
         return candidates.first(where: FileManager.default.isExecutableFile(atPath:))
     }
+
+    private static let appServerScript = """
+    coproc "$1" app-server
+    server_pid=$!
+    trap 'kill "$server_pid" 2>/dev/null; exit 143' HUP INT TERM
+    print -p -r -- "$2"
+    while read -p -r line; do
+      print -r -- "$line"
+      [[ "$line" == *'"id":1'* ]] && break
+    done
+    print -p -r -- "$3"
+    while read -p -r line; do
+      print -r -- "$line"
+      [[ "$line" == *'"id":2'* ]] && break
+    done
+    """
 }

@@ -77,6 +77,7 @@ Required metric fields are `name`, `value`, `unit`, `source`, `timestamp`, and `
 - Refreshes every 60 seconds.
 - Uses a 10 second timer tolerance so macOS can coalesce background wakeups.
 - Prevents overlapping refreshes.
+- Waits for App Server protocol responses instead of relying on fixed delays.
 - Inspects only the 12 most recently modified session logs.
 - Reads at most 256 KB from the tail of each log file.
 - Runs parsing work off the main actor, then updates the menu on the main actor.

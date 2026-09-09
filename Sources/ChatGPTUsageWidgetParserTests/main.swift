@@ -149,6 +149,27 @@ func testPreservesLastKnownWindowsAfterTransientFailure() throws {
     try expect(retained.message == "Codex App Server timed out", "Expected the refresh error to remain available")
 }
 
+func testLegacyLogSourceIgnoresNewerSparkBucket() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("chatgpt-usage-widget-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let events = """
+    {"timestamp":"2026-09-09T20:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","limit_name":null,"primary":{"used_percent":28,"resets_at":1800000000},"credits":{"has_credits":false,"unlimited":false,"balance":"0"}}}}
+    {"timestamp":"2026-09-09T20:01:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex_bengalfox","limit_name":"GPT-5.3-Codex-Spark","primary":{"used_percent":0,"resets_at":1800000001},"credits":null}}}
+    """
+    try events.write(to: directory.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+
+    let snapshot = LocalCodexLogUsageSource(sessionsDirectory: directory).fetch(
+        now: iso8601Date("2026-09-09T20:01:30Z")
+    )
+
+    try expect(snapshot.state == .live, "Expected the recent Codex event to be live")
+    try expect(snapshot.metrics.first?.name == "codex_remaining", "Expected the general Codex bucket")
+    try expect(snapshot.metrics.first?.value == Decimal(72), "Expected 72% remaining instead of Spark's 100%")
+}
+
 func testReadsLiveAppServerLimits() throws {
     let snapshot = AppServerUsageSource().fetch()
     try expect(snapshot.message == nil, snapshot.message ?? "Expected live App Server limits")
@@ -163,7 +184,8 @@ var tests: [(String, () throws -> Void)] = [
     ("mark old metrics stale", testMarksOldMetricsStale),
     ("parse selectable limit windows", testParsesSelectableLimitWindows),
     ("reject usage response without limits", testRejectsUsageResponseWithoutLimits),
-    ("preserve last known windows", testPreservesLastKnownWindowsAfterTransientFailure)
+    ("preserve last known windows", testPreservesLastKnownWindowsAfterTransientFailure),
+    ("ignore newer Spark legacy event", testLegacyLogSourceIgnoresNewerSparkBucket)
 ]
 
 if ProcessInfo.processInfo.environment["CHATGPT_USAGE_WIDGET_LIVE_TEST"] == "1" {

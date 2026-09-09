@@ -144,7 +144,8 @@ public struct LocalCodexLogUsageSource: Sendable {
         }
 
         var latest: CodexRateLimitEvent?
-        let decoder = Self.decoder
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom(Self.decodeDate)
         var candidates: [(url: URL, modified: Date)] = []
 
         for case let fileURL as URL in enumerator where fileURL.pathExtension == "jsonl" {
@@ -159,7 +160,8 @@ public struct LocalCodexLogUsageSource: Sendable {
                 guard line.contains("\"token_count\""), line.contains("\"rate_limits\"") else { continue }
                 guard let data = String(line).data(using: .utf8) else { continue }
                 guard let event = try? decoder.decode(CodexRateLimitEvent.self, from: data) else { continue }
-                if latest == nil || event.timestamp > latest!.timestamp {
+                guard event.payload.rateLimits.limitId == "codex" else { continue }
+                if event.timestamp > (latest?.timestamp ?? .distantPast) {
                     latest = event
                 }
             }
@@ -219,12 +221,6 @@ public struct LocalCodexLogUsageSource: Sendable {
         if let date = formatter.date(from: value) { return date }
         throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid Codex event timestamp")
     }
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom(Self.decodeDate)
-        return decoder
-    }()
 
 }
 

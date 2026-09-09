@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if let selected = selectedWindow {
                 menu.addItem(.separator())
-                menu.addItem(.init(title: "Resets: \(Self.format(selected.resetsAt))", action: nil, keyEquivalent: ""))
+                menu.addItem(.init(title: "Resets: \(Self.dateFormatter.string(from: selected.resetsAt))", action: nil, keyEquivalent: ""))
                 menu.addItem(.init(title: "Used: \(Int(selected.usedPercent.rounded()))%", action: nil, keyEquivalent: ""))
             }
 
@@ -150,10 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
-
-    private static func format(_ date: Date) -> String {
-        dateFormatter.string(from: date)
-    }
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
