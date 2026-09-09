@@ -106,12 +106,50 @@ func testMarksOldMetricsStale() throws {
     try expect(snapshot.state == .stale, "Expected STALE state")
 }
 
-let tests: [(String, () throws -> Void)] = [
+func testParsesSelectableLimitWindows() throws {
+    let json = """
+    {"id":2,"result":{"rateLimitsByLimitId":{
+      "codex":{"limitId":"codex","limitName":null,"primary":{"usedPercent":28,"windowDurationMins":10080,"resetsAt":1800000000},"secondary":null},
+      "codex_bengalfox":{"limitId":"codex_bengalfox","limitName":"GPT-5.3-Codex-Spark","primary":{"usedPercent":0,"windowDurationMins":300,"resetsAt":1800000001},"secondary":{"usedPercent":7,"windowDurationMins":10080,"resetsAt":1800000002}}
+    }}}
+    """
+
+    let windows = try UsageLimitsParser.parse(Data(json.utf8))
+    try expect(
+        windows.map(\.key) == ["codex:primary", "codex_bengalfox:primary", "codex_bengalfox:secondary"],
+        "Expected general, Spark 5h, and Spark weekly windows"
+    )
+    try expect(windows.map(\.remainingPercent) == [72, 100, 93], "Expected remaining percentage per window")
+}
+
+func testRejectsUsageResponseWithoutLimits() throws {
+    do {
+        _ = try UsageLimitsParser.parse(Data("{\"id\":2,\"result\":{}}".utf8))
+        throw TestFailure.failed("Expected missing limits to fail")
+    } catch let error as UsageLimitsParserError {
+        try expect(error == .noLimits, "Expected noLimits, got \(error)")
+    }
+}
+
+func testReadsLiveAppServerLimits() throws {
+    let snapshot = AppServerUsageSource().fetch()
+    try expect(snapshot.message == nil, snapshot.message ?? "Expected live App Server limits")
+    try expect(snapshot.windows.contains(where: { $0.limitId == "codex" }), "Expected the general Codex limit")
+    print("LIVE " + snapshot.windows.map { "\($0.key)=\($0.remainingPercent)%" }.joined(separator: ", "))
+}
+
+var tests: [(String, () throws -> Void)] = [
     ("parse complete metric", testParsesCompleteMetricAndPreservesFields),
     ("reject malformed JSON", testRejectsMalformedJSON),
     ("reject missing required fields", testRejectsMetricsMissingRequiredFields),
-    ("mark old metrics stale", testMarksOldMetricsStale)
+    ("mark old metrics stale", testMarksOldMetricsStale),
+    ("parse selectable limit windows", testParsesSelectableLimitWindows),
+    ("reject usage response without limits", testRejectsUsageResponseWithoutLimits)
 ]
+
+if ProcessInfo.processInfo.environment["CHATGPT_USAGE_WIDGET_LIVE_TEST"] == "1" {
+    tests.append(("read live App Server limits", testReadsLiveAppServerLimits))
+}
 
 do {
     for (name, test) in tests {

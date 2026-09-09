@@ -1,17 +1,29 @@
 # ChatGPT Usage Widget
 
-A tiny native macOS menu bar utility that displays your local ChatGPT/Codex usage status.
+A tiny native macOS menu bar utility that displays selectable ChatGPT/Codex usage limits.
 
 It was built as a small, practical Swift project: no Electron, no analytics, no credential scraping, and no network calls from the widget itself.
 
 ## What It Shows
 
-- Remaining usage percentage when a recent local Codex rate-limit snapshot is available.
+- Remaining usage percentage from the authoritative Codex account endpoint.
+- A persistent selector for every available limit window, such as Codex weekly,
+  Spark 5-hour, and Spark weekly.
 - `STALE` when the last real snapshot is older than 180 seconds.
 - `UNAVAILABLE` when no trusted local source can be read.
 - Last updated time, reset time, source status, confidence, refresh, dashboard shortcut, and quit controls.
 
-## Data Sources
+## Data Source
+
+The menu bar app starts the locally installed Codex App Server and requests
+`account/rateLimits/read`. It reads `rateLimitsByLimitId`, keeps every primary
+and secondary window separate, and stores the selected window in macOS
+preferences. Activity in one model-specific bucket can no longer silently
+replace the selected percentage.
+
+The older helper and JSONL readers remain in the core library for compatibility.
+
+## Legacy Data Sources
 
 The widget uses explicit local sources only:
 

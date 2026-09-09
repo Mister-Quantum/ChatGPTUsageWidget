@@ -6,18 +6,20 @@ import Foundation
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let refreshInterval: TimeInterval = 60
-    private lazy var usageSource = LocalHelperUsageSource(parser: UsageParser(staleAfter: refreshInterval * 3))
+    private let selectionPreference = "selectedUsageLimitWindow"
+    private let usageSource = AppServerUsageSource()
+    private var windows: [UsageLimitWindow] = []
+    private var message: String?
     private var timer: Timer?
-    private var currentSnapshot: UsageSnapshot = .unavailable()
     private var isRefreshing = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-
-        statusItem.button?.title = "ChatGPT Unavailable"
-        statusItem.button?.toolTip = "ChatGPT usage status"
-
+        statusItem.button?.title = "Codex …"
+        statusItem.button?.toolTip = "ChatGPT/Codex usage limits"
+        rebuildMenu()
         refresh()
+
         let timer = Timer.scheduledTimer(
             timeInterval: refreshInterval,
             target: self,
@@ -29,51 +31,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.timer = timer
     }
 
+    private var selectedKey: String {
+        get { UserDefaults.standard.string(forKey: selectionPreference) ?? "codex:primary" }
+        set { UserDefaults.standard.set(newValue, forKey: selectionPreference) }
+    }
+
+    private var selectedWindow: UsageLimitWindow? {
+        windows.first(where: { $0.key == selectedKey })
+            ?? windows.first(where: { $0.limitId == "codex" })
+            ?? windows.first
+    }
+
     private func refresh() {
         guard !isRefreshing else { return }
         isRefreshing = true
+        rebuildMenu()
         let source = usageSource
+
         Task {
             let snapshot = await Task.detached(priority: .utility) {
                 source.fetch()
             }.value
 
             isRefreshing = false
-            currentSnapshot = snapshot
-            statusItem.button?.title = Self.menuBarTitle(for: snapshot)
-            statusItem.menu = makeMenu(for: snapshot)
+            windows = snapshot.windows
+            message = snapshot.message
+            if !windows.contains(where: { $0.key == selectedKey }), let fallback = selectedWindow {
+                selectedKey = fallback.key
+            }
+            updateStatusItem()
+            rebuildMenu()
         }
     }
 
-    @objc private func refreshFromTimer() {
-        refresh()
+    private func updateStatusItem() {
+        guard let selected = selectedWindow else {
+            statusItem.button?.title = "Codex Unavailable"
+            statusItem.button?.toolTip = message ?? "Usage limits unavailable"
+            return
+        }
+
+        statusItem.button?.title = selected.statusTitle
+        statusItem.button?.toolTip = selected.menuTitle
     }
 
-    private func makeMenu(for snapshot: UsageSnapshot) -> NSMenu {
+    private func rebuildMenu() {
         let menu = NSMenu()
-        menu.addItem(.init(title: "State: \(snapshot.state.rawValue)", action: nil, keyEquivalent: ""))
-        menu.addItem(.init(title: "Source: \(snapshot.sourceStatus)", action: nil, keyEquivalent: ""))
-        menu.addItem(.init(title: "Last Updated: \(Self.format(snapshot.lastUpdated))", action: nil, keyEquivalent: ""))
-        menu.addItem(.init(title: "Reset: \(Self.format(snapshot.resetTime))", action: nil, keyEquivalent: ""))
+        menu.addItem(.init(title: "Limit shown", action: nil, keyEquivalent: ""))
 
-        if let metric = Self.primaryMetric(from: snapshot) {
-            menu.addItem(.init(title: "Metric: \(metric.name)", action: nil, keyEquivalent: ""))
-            menu.addItem(.init(title: "Value: \(Self.formatMetric(metric))", action: nil, keyEquivalent: ""))
-            menu.addItem(.init(title: "Confidence: \(Self.percent(metric.confidence))", action: nil, keyEquivalent: ""))
-        } else if let message = snapshot.message {
-            menu.addItem(.init(title: message, action: nil, keyEquivalent: ""))
+        if windows.isEmpty {
+            menu.addItem(.init(title: message ?? (isRefreshing ? "Loading…" : "Unavailable"), action: nil, keyEquivalent: ""))
+        } else {
+            for window in windows {
+                let item = NSMenuItem(title: window.menuTitle, action: #selector(selectWindow(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = window.key
+                item.state = window.key == selectedWindow?.key ? .on : .off
+                menu.addItem(item)
+            }
+
+            if let selected = selectedWindow {
+                menu.addItem(.separator())
+                menu.addItem(.init(title: "Resets: \(Self.format(selected.resetsAt))", action: nil, keyEquivalent: ""))
+                menu.addItem(.init(title: "Used: \(Int(selected.usedPercent.rounded()))%", action: nil, keyEquivalent: ""))
+            }
         }
 
         menu.addItem(.separator())
-        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(
+            title: isRefreshing ? "Refreshing…" : "Refresh",
+            action: #selector(refreshFromMenu),
+            keyEquivalent: "r"
+        )
         refreshItem.target = self
+        refreshItem.isEnabled = !isRefreshing
         menu.addItem(refreshItem)
 
-        let dashboardItem = NSMenuItem(
-            title: "Open Usage Dashboard",
-            action: #selector(openUsageDashboard),
-            keyEquivalent: "d"
-        )
+        let dashboardItem = NSMenuItem(title: "Open Usage Dashboard", action: #selector(openUsageDashboard), keyEquivalent: "d")
         dashboardItem.target = self
         menu.addItem(dashboardItem)
 
@@ -81,12 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-        return menu
+        statusItem.menu = menu
     }
 
-    @objc private func refreshFromMenu() {
-        refresh()
+    @objc private func selectWindow(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        selectedKey = key
+        updateStatusItem()
+        rebuildMenu()
     }
+
+    @objc private func refreshFromTimer() { refresh() }
+    @objc private func refreshFromMenu() { refresh() }
 
     @objc private func openUsageDashboard() {
         if let url = URL(string: "https://chatgpt.com/#settings/usage") {
@@ -94,69 +134,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func quit() {
-        NSApp.terminate(nil)
-    }
+    @objc private func quit() { NSApp.terminate(nil) }
 
-    private static func menuBarTitle(for snapshot: UsageSnapshot) -> String {
-        guard let metric = primaryMetric(from: snapshot) else {
-            return "ChatGPT Unavailable"
-        }
-
-        switch snapshot.state {
-        case .live:
-            return "ChatGPT \(formatMetric(metric))"
-        case .stale:
-            return "ChatGPT Stale \(formatMetric(metric))"
-        case .unavailable, .error:
-            return "ChatGPT Unavailable"
-        }
-    }
-
-    private static func primaryMetric(from snapshot: UsageSnapshot) -> UsageMetric? {
-        snapshot.metrics.first { metric in
-            metric.name.localizedCaseInsensitiveContains("remaining")
-        } ?? snapshot.metrics.first
-    }
-
-    private static func formatMetric(_ metric: UsageMetric) -> String {
-        let value = NSDecimalNumber(decimal: metric.value).doubleValue
-        let number: String
-        if value.rounded() == value {
-            number = String(Int(value))
-        } else {
-            number = String(format: "%.1f", value)
-        }
-
-        switch metric.unit.lowercased() {
-        case "percent", "percentage", "%":
-            return "\(number)% remaining"
-        default:
-            return "\(number) \(metric.unit)"
-        }
-    }
-
-    private static func format(_ date: Date?) -> String {
-        guard let date else { return "Unknown" }
-        return dateFormatter.string(from: date)
-    }
-
-    private static func percent(_ value: Double) -> String {
-        "\(Int((value * 100).rounded()))%"
+    private static func format(_ date: Date) -> String {
+        dateFormatter.string(from: date)
     }
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
+        formatter.timeStyle = .short
         return formatter
     }()
 }
 
 @main
 struct ChatGPTUsageWidgetMain {
-    @MainActor
-    private static let delegate = AppDelegate()
+    @MainActor private static let delegate = AppDelegate()
 
     @MainActor
     static func main() {
