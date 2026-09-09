@@ -120,6 +120,7 @@ func testParsesSelectableLimitWindows() throws {
         "Expected general, Spark 5h, and Spark weekly windows"
     )
     try expect(windows.map(\.remainingPercent) == [72, 100, 93], "Expected remaining percentage per window")
+    try expect(windows.map(\.statusTitle) == ["72%", "100%", "93%"], "Expected compact percentage-only status titles")
 }
 
 func testRejectsUsageResponseWithoutLimits() throws {

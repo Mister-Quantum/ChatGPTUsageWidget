@@ -7,6 +7,7 @@ It was built as a small, practical Swift project: no Electron, no analytics, no 
 ## What It Shows
 
 - Remaining usage percentage from the authoritative Codex account endpoint.
+- The official ChatGPT template icon beside the selected percentage in the menu bar.
 - A persistent selector for every available limit window, such as Codex weekly,
   Spark 5-hour, and Spark weekly.
 - `STALE` when the last real snapshot is older than 180 seconds.

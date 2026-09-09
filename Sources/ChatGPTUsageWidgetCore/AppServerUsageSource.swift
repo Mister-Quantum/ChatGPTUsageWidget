@@ -19,7 +19,7 @@ public struct UsageLimitWindow: Equatable, Sendable {
     }
 
     public var statusTitle: String {
-        "\(shortName) \(remainingPercent)%"
+        "\(remainingPercent)%"
     }
 }
 

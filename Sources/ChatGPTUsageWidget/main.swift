@@ -15,8 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        statusItem.button?.title = "Codex …"
-        statusItem.button?.toolTip = "ChatGPT/Codex usage limits"
+        if let button = statusItem.button {
+            button.image = Self.chatGPTStatusImage
+            button.imagePosition = .imageLeading
+            button.imageScaling = .scaleProportionallyDown
+            button.title = "…"
+            button.toolTip = "ChatGPT/Codex usage limits"
+        }
         rebuildMenu()
         refresh()
 
@@ -66,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem() {
         guard let selected = selectedWindow else {
-            statusItem.button?.title = "Codex Unavailable"
+            statusItem.button?.title = "—"
             statusItem.button?.toolTip = message ?? "Usage limits unavailable"
             return
         }
@@ -145,6 +150,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter
+    }()
+
+    private static let chatGPTStatusImage: NSImage? = {
+        var candidates: [URL] = []
+
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") {
+            let resources = appURL.appendingPathComponent("Contents/Resources")
+            candidates.append(resources.appendingPathComponent("chatgptTemplate.png"))
+            candidates.append(resources.appendingPathComponent("chatgptTemplate@2x.png"))
+        }
+
+        candidates.append(URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/chatgptTemplate.png"))
+        candidates.append(URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/chatgptTemplate@2x.png"))
+
+        for url in candidates {
+            if let image = NSImage(contentsOf: url) {
+                image.size = NSSize(width: 18, height: 18)
+                image.isTemplate = true
+                image.accessibilityDescription = "ChatGPT"
+                return image
+            }
+        }
+
+        let fallback = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "ChatGPT")
+        fallback?.size = NSSize(width: 16, height: 16)
+        fallback?.isTemplate = true
+        return fallback
     }()
 }
 
