@@ -30,6 +30,11 @@ public struct UsageLimitsSnapshot: Sendable {
     public static func unavailable(_ message: String) -> UsageLimitsSnapshot {
         UsageLimitsSnapshot(windows: [], message: message)
     }
+
+    public func preservingLastKnownWindows(_ previous: [UsageLimitWindow]) -> UsageLimitsSnapshot {
+        guard windows.isEmpty, !previous.isEmpty else { return self }
+        return UsageLimitsSnapshot(windows: previous, message: message)
+    }
 }
 
 public enum UsageLimitsParserError: Error, Equatable {

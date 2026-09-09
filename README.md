@@ -10,6 +10,7 @@ It was built as a small, practical Swift project: no Electron, no analytics, no 
 - The official ChatGPT template icon beside the selected percentage in the menu bar.
 - A persistent selector for every available limit window, such as Codex weekly,
   Spark 5-hour, and Spark weekly.
+- The last valid percentage remains visible during refreshes and transient source failures.
 - `STALE` when the last real snapshot is older than 180 seconds.
 - `UNAVAILABLE` when no trusted local source can be read.
 - Last updated time, reset time, source status, confidence, refresh, dashboard shortcut, and quit controls.

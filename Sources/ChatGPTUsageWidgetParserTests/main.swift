@@ -132,6 +132,23 @@ func testRejectsUsageResponseWithoutLimits() throws {
     }
 }
 
+func testPreservesLastKnownWindowsAfterTransientFailure() throws {
+    let json = """
+    {"id":2,"result":{"rateLimitsByLimitId":{
+      "codex":{"limitId":"codex","limitName":null,"primary":{"usedPercent":31,"windowDurationMins":10080,"resetsAt":1800000000},"secondary":null}
+    }}}
+    """
+
+    let previous = try UsageLimitsParser.parse(Data(json.utf8))
+    let retained = UsageLimitsSnapshot
+        .unavailable("Codex App Server timed out")
+        .preservingLastKnownWindows(previous)
+
+    try expect(retained.windows == previous, "Expected a transient failure to retain the last valid windows")
+    try expect(retained.windows.first?.statusTitle == "69%", "Expected the last percentage to remain visible")
+    try expect(retained.message == "Codex App Server timed out", "Expected the refresh error to remain available")
+}
+
 func testReadsLiveAppServerLimits() throws {
     let snapshot = AppServerUsageSource().fetch()
     try expect(snapshot.message == nil, snapshot.message ?? "Expected live App Server limits")
@@ -145,7 +162,8 @@ var tests: [(String, () throws -> Void)] = [
     ("reject missing required fields", testRejectsMetricsMissingRequiredFields),
     ("mark old metrics stale", testMarksOldMetricsStale),
     ("parse selectable limit windows", testParsesSelectableLimitWindows),
-    ("reject usage response without limits", testRejectsUsageResponseWithoutLimits)
+    ("reject usage response without limits", testRejectsUsageResponseWithoutLimits),
+    ("preserve last known windows", testPreservesLastKnownWindowsAfterTransientFailure)
 ]
 
 if ProcessInfo.processInfo.environment["CHATGPT_USAGE_WIDGET_LIVE_TEST"] == "1" {

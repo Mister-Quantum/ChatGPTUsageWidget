@@ -59,8 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }.value
 
             isRefreshing = false
-            windows = snapshot.windows
-            message = snapshot.message
+            let displaySnapshot = snapshot.preservingLastKnownWindows(windows)
+            windows = displaySnapshot.windows
+            message = displaySnapshot.message
             if !windows.contains(where: { $0.key == selectedKey }), let fallback = selectedWindow {
                 selectedKey = fallback.key
             }
@@ -77,7 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         statusItem.button?.title = selected.statusTitle
-        statusItem.button?.toolTip = selected.menuTitle
+        if let message {
+            statusItem.button?.toolTip = "\(selected.menuTitle)\nLast refresh failed: \(message)"
+        } else {
+            statusItem.button?.toolTip = selected.menuTitle
+        }
     }
 
     private func rebuildMenu() {
@@ -99,6 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 menu.addItem(.separator())
                 menu.addItem(.init(title: "Resets: \(Self.format(selected.resetsAt))", action: nil, keyEquivalent: ""))
                 menu.addItem(.init(title: "Used: \(Int(selected.usedPercent.rounded()))%", action: nil, keyEquivalent: ""))
+            }
+
+            if let message {
+                menu.addItem(.separator())
+                menu.addItem(.init(title: "Last refresh failed: \(message)", action: nil, keyEquivalent: ""))
             }
         }
 
